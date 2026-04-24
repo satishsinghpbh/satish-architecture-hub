@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trade File Architecture — DB Save + IBM MQ</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:      #07090f;
+    --surface: #0c1220;
+    --card:    #0f1826;
+    --border:  #182338;
+    --accent:  #38bdf8;
+    --green:   #34d399;
+    --amber:   #fbbf24;
+    --red:     #f87171;
+    --purple:  #c084fc;
+    --orange:  #fb923c;
+    --pink:    #f472b6;
+    --teal:    #2dd4bf;
+    --text:    #e2e8f0;
+    --muted:   #4b6080;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  code, .mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Layout ── */
+  .page { max-width: 1280px; margin: 0 auto; padding: 36px 28px 80px; }
+
+  /* ── Header ── */
+  .header { margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+  .header-label { font-size: 10px; letter-spacing: 0.2em; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; }
+  .header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .header h1 code { color: var(--purple); font-size: 18px; }
+  .header p { font-size: 12px; color: var(--muted); margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 24px; }
+  .tab {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.15s;
+  }
+  .tab:hover { border-color: var(--accent); color: var(--accent); }
+  .tab.active { background: rgba(56,189,248,0.12); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
+  /* ── Panels ── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 26px;
+    margin-bottom: 18px;
+  }
+  .panel-red    { border-color: rgba(248,113,113,0.4); }
+  .panel-teal   { border-color: rgba(45,212,191,0.4); }
+  .panel-pink   { border-color: rgba(244,114,182,0.4); }
+  .panel-amber  { border-color: rgba(251,191,36,0.4); }
+
+  /* ── Section heading ── */
+  .sec-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .sec-head-line { flex: 1; height: 1px; }
+  .sec-head-text {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+  }
+
+  /* ── Flow row ── */
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .flow-col { display: flex; flex-direction: column; gap: 8px; }
+  .flow-vert { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+
+  /* ── Box ── */
+  .box {
+    background: var(--card);
+    border-radius: 8px;
+    padding: 10px 13px;
+    flex-shrink: 0;
+  }
+  .box-title { font-size: 12px; font-weight: 700; }
+  .box-sub { font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1.5; white-space: pre-line; font-family: 'JetBrains Mono', monospace; }
+
+  /* ── Arrow ── */
+  .arr { display: flex; align-items: center; flex-shrink: 0; }
+  .arr-line { width: 24px; height: 2px; opacity: 0.35; }
+  .arr-head { font-size: 11px; opacity: 0.65; }
+  .arr-down { display: flex; flex-direction: column; align-items: center; min-height: 30px; }
+  .arr-down-line { flex: 1; width: 2px; opacity: 0.35; }
+  .arr-down-head { font-size: 10px; opacity: 0.65; }
+
+  /* ── TX wrap ── */
+  .tx {
+    border: 2px dashed;
+    border-radius: 10px;
+    padding: 14px 13px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .tx-label {
+    position: absolute;
+    top: -10px;
+    left: 12px;
+    background: var(--bg);
+    padding: 0 8px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .tx-note {
+    position: absolute;
+    top: -10px;
+    right: 12px;
+    background: var(--bg);
+    padding: 0 8px;
+    font-size: 8px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Warn / Guard ── */
+  .warn {
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-size: 10px;
+    line-height: 1.5;
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .guard {
+    background: rgba(52,211,153,0.07);
+    border: 1px dashed rgba(52,211,153,0.4);
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-size: 10px;
+    color: var(--green);
+    line-height: 1.5;
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .guard::before { content: "🛡 "; }
+
+  /* ── Note bar ── */
+  .note {
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-top: 14px;
+    border-left-width: 3px;
+    border-left-style: solid;
+    border-top: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .note strong { font-weight: 700; }
+
+  /* ── Code block ── */
+  .codeblock {
+    background: #060a10;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    line-height: 1.9;
+    color: var(--muted);
+    margin-top: 12px;
+    border-left-width: 3px;
+    border-left-style: solid;
+    overflow-x: auto;
+  }
+
+  /* ── Step ── */
+  .step { margin-bottom: 22px; }
+  .step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .step-num {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800;
+    flex-shrink: 0;
+  }
+  .step-label { font-size: 12px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+  /* ── Grid cards ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .card-title { font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+
+  /* ── Table ── */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .tbl th {
+    padding: 9px 13px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+  }
+  .tbl td { padding: 8px 13px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+  .tbl tr:nth-child(even) td { background: rgba(15,24,38,0.6); }
+
+  /* ── State machine ── */
+  .state-wrap { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .state-box {
+    background: var(--card);
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 10px;
+    padding: 13px 28px;
+    text-align: center;
+    min-width: 200px;
+  }
+  .state-box-title { font-size: 15px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+  .state-box-sub { font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .state-row { display: flex; justify-content: center; gap: 20px; margin: 4px 0; }
+  .state-arrow-group { display: flex; flex-direction: column; align-items: center; }
+  .state-arrow-label { font-size: 9px; font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+
+  /* ── Tab content ── */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Responsive flow ── */
+  @media (max-width: 700px) {
+    .flow { flex-direction: column; align-items: flex-start; }
+    .arr { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-label">Final Architecture · Trade File Processing</div>
+    <h1>DB Save + MQ Send · Single <code>@Transactional</code></h1>
+    <p>Non-XA · JPA TxManager · IBM MQ CLIENT_ACKNOWLEDGE · Idempotent · DB-backed DLQ</p>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active" onclick="showTab(0)">Upload Flow</button>
+    <button class="tab" onclick="showTab(1)">Listener Flow</button>
+    <button class="tab" onclick="showTab(2)">Corner Cases</button>
+    <button class="tab" onclick="showTab(3)">State Machine</button>
+    <button class="tab" onclick="showTab(4)">Failure Matrix</button>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       TAB 0 — UPLOAD
+  ════════════════════════════════════════ -->
+  <div class="tab-content active" id="tab0">
+
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(56,189,248,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--accent)">Upload — Single @Transactional</div>
+        <div class="sec-head-line" style="background:rgba(56,189,248,0.25)"></div>
+      </div>
+
+      <div class="flow">
+        <!-- Client -->
+        <div class="box" style="border:1.5px solid var(--accent); box-shadow:0 0 16px rgba(56,189,248,0.08); width:155px;">
+          <div class="box-title" style="color:var(--accent)">🖥 Client</div>
+          <div class="box-sub">POST /upload&#10;file + userId&#10;+ correlationId ①</div>
+        </div>
+
+        <!-- Arrow -->
+        <div class="arr"><div class="arr-line" style="background:var(--accent)"></div><div class="arr-head" style="color:var(--accent)">▶</div></div>
+
+        <!-- Controller -->
+        <div class="box" style="border:1.5px solid var(--accent); width:150px;">
+          <div class="box-title" style="color:var(--accent)">Controller</div>
+          <div class="box-sub">validates input&#10;delegates to service</div>
+        </div>
+
+        <div class="arr"><div class="arr-line" style="background:var(--accent)"></div><div class="arr-head" style="color:var(--accent)">▶</div></div>
+
+        <!-- TX Block -->
+        <div class="tx" style="border-color:var(--green); background:rgba(52,211,153,0.05);">
+          <div class="tx-label" style="color:var(--green)">@Transactional — JPA local tx only</div>
+          <div class="tx-note">TradeFileService.uploadFile()</div>
+          <div class="flow-col" style="gap:10px; margin-top:4px;">
+            <div class="box" style="border:1.5px solid var(--teal); width:220px;">
+              <div class="box-title" style="color:var(--teal)">① Idempotency Check</div>
+              <div class="box-sub">SELECT by correlationId&#10;if found → return existing fileId</div>
+            </div>
+            <div class="box" style="border:1.5px solid var(--green); width:220px;">
+              <div class="box-title" style="color:var(--green)">② fileRepo.save()</div>
+              <div class="box-sub">status = SUBMITTED · returns fileId&#10;written but NOT committed yet</div>
+            </div>
+            <div class="box" style="border:1.5px solid var(--amber); width:220px;">
+              <div class="box-title" style="color:var(--amber)">③ jmsTemplate.send() 📨</div>
+              <div class="box-sub">fileId + userId → IBM MQ&#10;fires INSIDE open transaction</div>
+            </div>
+            <div class="mono" style="font-size:9px; color:var(--green);">↓ method returns → JPA COMMITS DB</div>
+          </div>
+        </div>
+
+        <div class="arr"><div class="arr-line" style="background:var(--accent)"></div><div class="arr-head" style="color:var(--accent)">▶</div></div>
+
+        <div class="box" style="border:1.5px solid var(--accent); width:130px;">
+          <div class="box-title" style="color:var(--accent)">HTTP 200</div>
+          <div class="box-sub">return fileId&#10;to client</div>
+        </div>
+      </div>
+
+      <div class="note" style="border-left-color:var(--green); background:rgba(52,211,153,0.05);">
+        <strong style="color:var(--green)">MQ send throws RuntimeException →</strong>
+        @Transactional rolls back the DB save automatically. No orphan record. Client gets error and can retry.
+      </div>
+    </div>
+
+    <!-- IDEMPOTENCY -->
+    <div class="panel panel-teal">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(45,212,191,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--teal)">① Client Idempotency Key — Critical Addition</div>
+        <div class="sec-head-line" style="background:rgba(45,212,191,0.25)"></div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div class="warn" style="background:rgba(251,191,36,0.08); border:1px dashed rgba(251,191,36,0.4); color:var(--orange);">
+            ⚠ Client upload times out → client retries → two trade_file rows created → two MQ messages sent → file processed twice. Classic retry storm.
+          </div>
+        </div>
+        <div>
+          <div class="guard">Client sends a unique correlationId per upload attempt. DB has UNIQUE(correlation_id). Second upload hits idempotency check → returns existing fileId. No duplicate record, no duplicate message.</div>
+        </div>
+      </div>
+      <div class="codeblock" style="border-left-color:var(--teal);">
+        <span style="color:var(--teal);">ALTER TABLE trade_file ADD COLUMN correlation_id VARCHAR(100);</span><br>
+        <span style="color:var(--teal);">ALTER TABLE trade_file ADD CONSTRAINT uq_corr UNIQUE (correlation_id);</span><br>
+        <span style="color:var(--muted);">-- Service: SELECT by correlationId first → return existing fileId if found</span>
+      </div>
+    </div>
+
+    <!-- TWO GAPS -->
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(251,146,60,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--orange)">The Two Upload Gaps &amp; Mitigations</div>
+        <div class="sec-head-line" style="background:rgba(251,146,60,0.25)"></div>
+      </div>
+      <div class="grid-2">
+        <!-- GAP 1 -->
+        <div class="card" style="border-top:3px solid var(--red);">
+          <div class="card-title" style="color:var(--red);">GAP 1 — DB Commit Fails After MQ Send</div>
+          <div class="flow" style="gap:8px; margin-bottom:10px;">
+            <div class="box" style="border:1.5px solid var(--green); width:80px;"><div class="box-title" style="color:var(--green); font-size:11px;">save() ✅</div><div class="box-sub">in tx</div></div>
+            <div class="arr"><div class="arr-line" style="background:var(--green);"></div><div class="arr-head" style="color:var(--green);">▶</div></div>
+            <div class="box" style="border:1.5px solid var(--amber); width:85px;"><div class="box-title" style="color:var(--amber); font-size:11px;">send() ✅</div><div class="box-sub">in MQ</div></div>
+            <div class="arr"><div class="arr-line" style="background:var(--red);"></div><div class="arr-head" style="color:var(--red);">▶</div></div>
+            <div class="box" style="border:1.5px solid var(--red); width:95px;"><div class="box-title" style="color:var(--red); font-size:11px;">commit ❌</div><div class="box-sub">DB throws&#10;rolls back</div></div>
+          </div>
+          <div class="warn" style="background:rgba(248,113,113,0.08); border:1px dashed rgba(248,113,113,0.4); color:var(--red);">⚠ Listener gets fileId → queries DB → record does not exist</div>
+          <div class="guard">fetchWithRetry 5x exhausted → trade_file_dlq via REQUIRES_NEW tx</div>
+        </div>
+        <!-- GAP 2 -->
+        <div class="card" style="border-top:3px solid var(--orange);">
+          <div class="card-title" style="color:var(--orange);">GAP 2 — Race: Listener Faster Than Commit</div>
+          <div class="flow" style="gap:8px; margin-bottom:10px;">
+            <div class="box" style="border:1.5px solid var(--green); width:88px;"><div class="box-title" style="color:var(--green); font-size:11px;">save() ✅</div><div class="box-sub">uncommitted</div></div>
+            <div class="arr"><div class="arr-line" style="background:var(--amber);"></div><div class="arr-head" style="color:var(--amber);">▶</div></div>
+            <div class="box" style="border:1.5px solid var(--amber); width:85px;"><div class="box-title" style="color:var(--amber); font-size:11px;">send() ✅</div><div class="box-sub">MQ fast</div></div>
+            <div class="arr"><div class="arr-line" style="background:var(--orange);"></div><div class="arr-head" style="color:var(--orange);">▶</div></div>
+            <div class="box" style="border:1.5px solid var(--red); width:90px;"><div class="box-title" style="color:var(--red); font-size:11px;">Listener</div><div class="box-sub">NOT FOUND</div></div>
+          </div>
+          <div class="warn" style="background:rgba(251,146,60,0.08); border:1px dashed rgba(251,146,60,0.4); color:var(--orange);">⚠ DB commit still pending — listener SELECT returns empty</div>
+          <div class="guard">fetchWithRetry attempt #2 after 500ms — DB committed by then</div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /tab0 -->
+
+  <!-- ════════════════════════════════════════
+       TAB 1 — LISTENER
+  ════════════════════════════════════════ -->
+  <div class="tab-content" id="tab1">
+
+    <!-- CRITICAL TRAPS -->
+    <div class="panel panel-red">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(248,113,113,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--red)">Critical Implementation Traps — Must Get Right</div>
+        <div class="sec-head-line" style="background:rgba(248,113,113,0.25)"></div>
+      </div>
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title" style="color:var(--red);">② Spring AOP Self-Invocation</div>
+          <div class="warn" style="background:rgba(248,113,113,0.08); border:1px dashed rgba(248,113,113,0.4); color:var(--red);">⚠ onMessage() calls processFile() in SAME class → Spring @Transactional proxy is completely bypassed → no transaction.</div>
+          <div class="guard">processFile() must live in a separate @Service (TradeFileProcessorService) injected into the listener.</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--red);">③ fetchWithRetry Isolation Trap</div>
+          <div class="warn" style="background:rgba(248,113,113,0.08); border:1px dashed rgba(248,113,113,0.4); color:var(--red);">⚠ If inside @Transactional, REPEATABLE_READ caches the first empty result. Every retry returns the same empty result forever.</div>
+          <div class="guard">Call fetchWithRetry() BEFORE any @Transactional boundary. Each attempt is a fresh independent read.</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--red);">④ markInProgress Propagation Trap</div>
+          <div class="warn" style="background:rgba(248,113,113,0.08); border:1px dashed rgba(248,113,113,0.4); color:var(--red);">⚠ If markInProgress uses REQUIRES_NEW it commits independently. App crash mid-row → status stuck IN_PROGRESS forever.</div>
+          <div class="guard">Use default REQUIRES propagation → joins parent tx → rolls back together on failure → status reverts to SUBMITTED.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LISTENER STEPS -->
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(192,132,252,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--purple)">Listener — All Steps (CLIENT_ACKNOWLEDGE)</div>
+        <div class="sec-head-line" style="background:rgba(192,132,252,0.25)"></div>
+      </div>
+
+      <!-- Step 1 -->
+      <div class="step">
+        <div class="step-head">
+          <div class="step-num" style="background:rgba(192,132,252,0.15); border:1.5px solid var(--purple); color:var(--purple);">1</div>
+          <div class="step-label" style="color:var(--purple);">Message Arrives — CLIENT_ACKNOWLEDGE (not acked yet)</div>
+        </div>
+        <div class="flow">
+          <div class="box" style="border:1.5px solid var(--purple); width:165px;"><div class="box-title" style="color:var(--purple);">📨 IBM MQ delivers</div><div class="box-sub">fileId + userId&#10;message NOT acked</div></div>
+          <div class="arr"><div class="arr-line" style="background:var(--purple);"></div><div class="arr-head" style="color:var(--purple);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--purple); width:160px;"><div class="box-title" style="color:var(--purple);">TradeFileListener</div><div class="box-sub">@JmsListener&#10;onMessage(msg, jmsMsg)</div></div>
+          <div class="arr"><div class="arr-line" style="background:var(--purple);"></div><div class="arr-head" style="color:var(--purple);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--teal); width:195px;"><div class="box-title" style="color:var(--teal);">TradeFileProcessorService ②</div><div class="box-sub">separate @Service&#10;Spring AOP trap fixed</div></div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="step">
+        <div class="step-head">
+          <div class="step-num" style="background:rgba(251,191,36,0.15); border:1.5px solid var(--amber); color:var(--amber);">2</div>
+          <div class="step-label" style="color:var(--amber);">fetchWithRetry() — OUTSIDE @Transactional ③ — fresh read per attempt</div>
+        </div>
+        <div class="flow">
+          <div class="tx" style="border-color:var(--amber); background:rgba(251,191,36,0.05);">
+            <div class="tx-label" style="color:var(--amber);">No transaction — Gap 2 handler</div>
+            <div class="flow" style="gap:18px; margin-top:4px;">
+              <div style="text-align:center;"><div class="mono" style="font-size:11px; color:var(--amber); font-weight:700;">#1</div><div class="mono" style="font-size:9px; color:var(--muted);">0ms</div></div>
+              <div style="text-align:center;"><div class="mono" style="font-size:11px; color:var(--amber); font-weight:700;">#2</div><div class="mono" style="font-size:9px; color:var(--muted);">500ms</div></div>
+              <div style="text-align:center;"><div class="mono" style="font-size:11px; color:var(--amber); font-weight:700;">#3</div><div class="mono" style="font-size:9px; color:var(--muted);">1000ms</div></div>
+              <div style="text-align:center;"><div class="mono" style="font-size:11px; color:var(--amber); font-weight:700;">#4</div><div class="mono" style="font-size:9px; color:var(--muted);">2000ms</div></div>
+              <div style="text-align:center;"><div class="mono" style="font-size:11px; color:var(--amber); font-weight:700;">#5</div><div class="mono" style="font-size:9px; color:var(--muted);">4000ms</div></div>
+            </div>
+          </div>
+          <div class="arr"><div class="arr-line" style="background:var(--green);"></div><div class="arr-head" style="color:var(--green);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--green); width:140px;"><div class="box-title" style="color:var(--green);">Found ✅</div><div class="box-sub">proceed to Step 3</div></div>
+          <div class="arr"><div class="arr-line" style="background:var(--red);"></div><div class="arr-head" style="color:var(--red);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--red); width:140px;"><div class="box-title" style="color:var(--red);">Exhausted</div><div class="box-sub">→ DLQ path (Step 6)</div></div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="step">
+        <div class="step-head">
+          <div class="step-num" style="background:rgba(248,113,113,0.15); border:1.5px solid var(--red); color:var(--red);">3</div>
+          <div class="step-label" style="color:var(--red);">Atomic Lock — 1 SQL statement, no app-level lock needed</div>
+        </div>
+        <div class="flow">
+          <div class="tx" style="border-color:var(--red); background:rgba(248,113,113,0.05);">
+            <div class="tx-label" style="color:var(--red);">UPDATE WHERE status=SUBMITTED — anti-duplicate</div>
+            <div class="codeblock" style="border-left-color:var(--red); margin-top:8px;">
+              UPDATE trade_file<br>
+              SET status=<span style="color:var(--orange);">'IN_PROGRESS'</span><br>
+              WHERE id=? AND status=<span style="color:var(--red);">'SUBMITTED'</span>
+            </div>
+          </div>
+          <div class="flow-col" style="gap:8px;">
+            <div class="arr"><div class="arr-line" style="background:var(--green);"></div><div class="arr-head" style="color:var(--green);">▶</div></div>
+            <div class="arr"><div class="arr-line" style="background:var(--muted);"></div><div class="arr-head" style="color:var(--muted);">▶</div></div>
+          </div>
+          <div class="flow-col" style="gap:8px;">
+            <div class="box" style="border:1.5px solid var(--green); width:160px;"><div class="box-title" style="color:var(--green);">1 row updated</div><div class="box-sub">this instance owns it&#10;→ proceed to Step 4</div></div>
+            <div class="box" style="border:1.5px solid var(--muted); width:160px;"><div class="box-title" style="color:var(--muted);">0 rows updated</div><div class="box-sub">already taken or done&#10;→ skip + ACK</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="step">
+        <div class="step-head">
+          <div class="step-num" style="background:rgba(52,211,153,0.15); border:1.5px solid var(--green); color:var(--green);">4</div>
+          <div class="step-label" style="color:var(--green);">Process File — @Transactional REQUIRES ④ — all or nothing</div>
+        </div>
+        <div class="tx" style="border-color:var(--green); background:rgba(52,211,153,0.04);">
+          <div class="tx-label" style="color:var(--green);">@Transactional(REQUIRES) — TradeFileProcessorService.process()</div>
+          <div class="tx-note">markInProgress JOINS this tx ④</div>
+          <div class="flow" style="margin-top:8px;">
+            <div class="box" style="border:1.5px solid var(--green); width:150px;"><div class="box-title" style="color:var(--green);">Read file content</div><div class="box-sub">SELECT from&#10;trade_file</div></div>
+            <div class="arr"><div class="arr-line" style="background:var(--green);"></div><div class="arr-head" style="color:var(--green);">▶</div></div>
+            <div class="box" style="border:1.5px solid var(--green); width:120px;"><div class="box-title" style="color:var(--green);">Parse CSV</div><div class="box-sub">→ List of rows</div></div>
+            <div class="arr"><div class="arr-line" style="background:var(--green);"></div><div class="arr-head" style="color:var(--green);">▶</div></div>
+            <div class="flow-col" style="gap:6px;">
+              <div class="box" style="border:1.5px solid var(--green); width:200px;"><div class="box-title" style="color:var(--green);">INSERT trade_instruction</div><div class="box-sub">UNIQUE(file_id, row_num)&#10;Duplicate → catch → skip (idempotent)</div></div>
+              <div class="warn" style="background:rgba(251,191,36,0.07); border:1px dashed rgba(251,191,36,0.4); color:var(--amber);">⚠ Large file? Chunk 500 rows/batch + last_processed_row checkpoint</div>
+            </div>
+            <div class="arr"><div class="arr-line" style="background:var(--green);"></div><div class="arr-head" style="color:var(--green);">▶</div></div>
+            <div class="box" style="border:1.5px solid var(--green); width:155px;"><div class="box-title" style="color:var(--green);">SET COMPLETED</div><div class="box-sub">UPDATE trade_file&#10;status=COMPLETED</div></div>
+          </div>
+          <div class="mono" style="font-size:9px; color:var(--green); margin-top:10px;">← DB COMMITS HERE — markInProgress is part of this tx, rolls back together on any failure → status reverts to SUBMITTED</div>
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="step">
+        <div class="step-head">
+          <div class="step-num" style="background:rgba(56,189,248,0.15); border:1.5px solid var(--accent); color:var(--accent);">5</div>
+          <div class="step-label" style="color:var(--accent);">ACK with Retry — 3 attempts</div>
+        </div>
+        <div class="flow">
+          <div class="tx" style="border-color:var(--accent); background:rgba(56,189,248,0.04);">
+            <div class="tx-label" style="color:var(--accent);">acknowledgeWithRetry()</div>
+            <div class="flow" style="gap:18px; margin-top:4px;">
+              <div style="text-align:center;"><div class="mono" style="font-weight:700; color:var(--accent);">Attempt 1</div><div class="mono" style="font-size:9px; color:var(--muted);">immediate</div></div>
+              <div style="text-align:center;"><div class="mono" style="font-weight:700; color:var(--accent);">Attempt 2</div><div class="mono" style="font-size:9px; color:var(--muted);">500ms</div></div>
+              <div style="text-align:center;"><div class="mono" style="font-weight:700; color:var(--accent);">Attempt 3</div><div class="mono" style="font-size:9px; color:var(--muted);">1000ms</div></div>
+            </div>
+          </div>
+          <div class="arr"><div class="arr-line" style="background:var(--green);"></div><div class="arr-head" style="color:var(--green);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--green); width:150px;"><div class="box-title" style="color:var(--green);">ACK ok ✅</div><div class="box-sub">message removed&#10;from IBM MQ</div></div>
+          <div class="arr"><div class="arr-line" style="background:var(--amber);"></div><div class="arr-head" style="color:var(--amber);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--amber); width:185px;"><div class="box-title" style="color:var(--amber);">All ACKs fail</div><div class="box-sub">IBM MQ redelivers&#10;status=COMPLETED → Step 3&#10;skips safely forever</div></div>
+        </div>
+      </div>
+
+      <!-- Step 6 DLQ -->
+      <div class="step" style="border-top:1px solid var(--border); padding-top:18px;">
+        <div class="step-head">
+          <div class="step-num" style="background:rgba(248,113,113,0.15); border:1.5px solid var(--red); color:var(--red);">6</div>
+          <div class="step-label" style="color:var(--red);">DLQ Path — fetch retries exhausted (Gap 1 coverage)</div>
+        </div>
+        <div class="flow">
+          <div class="box" style="border:1.5px solid var(--red); width:155px;"><div class="box-title" style="color:var(--red);">5 retries done</div><div class="box-sub">file never appeared&#10;in DB</div></div>
+          <div class="arr"><div class="arr-line" style="background:var(--red);"></div><div class="arr-head" style="color:var(--red);">▶</div></div>
+          <div class="tx" style="border-color:var(--red); background:rgba(248,113,113,0.05);">
+            <div class="tx-label" style="color:var(--red);">@Transactional(REQUIRES_NEW) — independent tx, always commits</div>
+            <div class="box" style="border:1.5px solid var(--red); width:215px; margin-top:6px;"><div class="box-title" style="color:var(--red);">INSERT trade_file_dlq</div><div class="box-sub">fileId · userId · reason&#10;rawMessage · status=PENDING</div></div>
+          </div>
+          <div class="arr"><div class="arr-line" style="background:var(--red);"></div><div class="arr-head" style="color:var(--red);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--red); width:155px;"><div class="box-title" style="color:var(--red);">ACK message</div><div class="box-sub">remove from IBM MQ&#10;stop redelivery</div></div>
+          <div class="arr"><div class="arr-line" style="background:var(--amber);"></div><div class="arr-head" style="color:var(--amber);">▶</div></div>
+          <div class="box" style="border:1.5px solid var(--amber); width:155px;"><div class="box-title" style="color:var(--amber);">👤 Ops Review</div><div class="box-sub">inspect DLQ table&#10;re-upload if needed&#10;mark REPROCESSED</div></div>
+        </div>
+        <div class="note" style="border-left-color:var(--red); background:rgba(248,113,113,0.04);">
+          <strong style="color:var(--red);">Why REQUIRES_NEW?</strong> The DLQ insert must succeed even if the listener's outer transaction is in a broken state. Sharing the transaction would cause DLQ save to also roll back — the message record would be silently lost.
+        </div>
+      </div>
+    </div>
+
+    <!-- BACKOUT -->
+    <div class="panel panel-pink">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(244,114,182,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--pink)">⑤ IBM MQ Backout Queue — Permanent Failure Path</div>
+        <div class="sec-head-line" style="background:rgba(244,114,182,0.25)"></div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div class="warn" style="background:rgba(244,114,182,0.08); border:1px dashed rgba(244,114,182,0.4); color:var(--pink);">⚠ Corrupt file → parseCsv() always throws → listener nacks → IBM MQ redelivers → infinite loop. Without backout configured, queue is stuck forever.</div>
+          <div class="guard">Configure IBM MQ BackoutThreshold=5. After 5 failed redeliveries, IBM MQ auto-moves message to TRADE.FILE.BACKOUT queue. A BackoutQueueListener sets status=FAILED and inserts to trade_file_dlq.</div>
+          <div class="codeblock" style="border-left-color:var(--pink);">
+            <span style="color:var(--pink);"># IBM MQ queue definition</span><br>
+            DEFINE QLOCAL(TRADE.FILE.QUEUE)<br>
+            &nbsp;&nbsp;<span style="color:var(--pink);">BOQNAME(TRADE.FILE.BACKOUT)</span><br>
+            &nbsp;&nbsp;<span style="color:var(--pink);">BOTHRESH(5)</span>
+          </div>
+        </div>
+        <div class="flow-vert" style="gap:10px;">
+          <div class="box" style="border:1.5px solid var(--pink); width:100%;"><div class="box-title" style="color:var(--pink);">TRADE.FILE.BACKOUT</div><div class="box-sub">IBM MQ backout queue&#10;auto-populated after N redeliveries</div></div>
+          <div class="box" style="border:1.5px solid var(--pink); width:100%;"><div class="box-title" style="color:var(--pink);">BackoutQueueListener</div><div class="box-sub">@JmsListener(backout queue)</div></div>
+          <div class="tx" style="border-color:var(--pink); background:rgba(244,114,182,0.05); width:100%;">
+            <div class="tx-label" style="color:var(--pink);">REQUIRES_NEW</div>
+            <div class="flow-col" style="gap:6px; margin-top:6px;">
+              <div class="box" style="border:1.5px solid var(--pink);"><div class="box-title" style="color:var(--pink);">SET status=FAILED</div><div class="box-sub">UPDATE trade_file</div></div>
+              <div class="box" style="border:1.5px solid var(--pink);"><div class="box-title" style="color:var(--pink);">INSERT trade_file_dlq</div><div class="box-sub">reason=BACKOUT</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /tab1 -->
+
+  <!-- ════════════════════════════════════════
+       TAB 2 — CORNER CASES
+  ════════════════════════════════════════ -->
+  <div class="tab-content" id="tab2">
+
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(45,212,191,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--teal)">Horizontal Scaling — Multiple App Instances</div>
+        <div class="sec-head-line" style="background:rgba(45,212,191,0.25)"></div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div class="box" style="border:1.5px solid var(--teal); width:100%;">
+            <div class="box-title" style="color:var(--teal);">App Instance 1 + App Instance 2</div>
+            <div class="box-sub">Both consuming from IBM MQ simultaneously&#10;Each instance gets different messages (point-to-point)&#10;Atomic DB lock handles any redelivery overlap</div>
+          </div>
+        </div>
+        <div>
+          <div class="guard">IBM MQ point-to-point: each message delivered to exactly ONE consumer in normal flow.</div>
+          <div class="guard">Atomic UPDATE WHERE SUBMITTED ensures correct isolation even on redelivery across instances.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(251,146,60,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--orange)">App Crash Scenarios</div>
+        <div class="sec-head-line" style="background:rgba(251,146,60,0.25)"></div>
+      </div>
+      <div class="grid-2">
+        <div class="card" style="border-top:2px solid var(--green);">
+          <div class="card-title" style="color:var(--green);">Crash before jmsTemplate.send()</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+            <div><span style="color:var(--text);">DB:</span> JPA never commits → rolled back</div>
+            <div><span style="color:var(--text);">MQ:</span> No message sent</div>
+            <div style="color:var(--green); font-weight:600; margin-top:6px;">✅ Clean. No orphan. Client retries upload.</div>
+          </div>
+        </div>
+        <div class="card" style="border-top:2px solid var(--orange);">
+          <div class="card-title" style="color:var(--orange);">Crash after send(), before JPA commit</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+            <div><span style="color:var(--text);">DB:</span> JPA never commits → rolled back</div>
+            <div><span style="color:var(--text);">MQ:</span> Message already in IBM MQ</div>
+            <div style="color:var(--orange); font-weight:600; margin-top:6px;">⚠ Gap 1 scenario → fetch retries → DLQ table</div>
+          </div>
+        </div>
+        <div class="card" style="border-top:2px solid var(--green);">
+          <div class="card-title" style="color:var(--green);">Crash mid-row insert (tx open)</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+            <div><span style="color:var(--text);">DB:</span> Rolled back → status reverts to SUBMITTED</div>
+            <div><span style="color:var(--text);">MQ:</span> Not ACKed → IBM MQ redelivers</div>
+            <div style="color:var(--green); font-weight:600; margin-top:6px;">✅ Fresh retry. UNIQUE key skips already-done rows.</div>
+          </div>
+        </div>
+        <div class="card" style="border-top:2px solid var(--green);">
+          <div class="card-title" style="color:var(--green);">Crash after processFile commits, before ACK</div>
+          <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+            <div><span style="color:var(--text);">DB:</span> status=COMPLETED persisted</div>
+            <div><span style="color:var(--text);">MQ:</span> Redelivered on reconnect</div>
+            <div style="color:var(--green); font-weight:600; margin-top:6px;">✅ markInProgress=0 (COMPLETED) → skip → ACK</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(192,132,252,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--purple)">IBM MQ CLIENT_ACKNOWLEDGE — Key Behaviours</div>
+        <div class="sec-head-line" style="background:rgba(192,132,252,0.25)"></div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div class="card-title" style="color:var(--purple); margin-bottom:8px;">Bulk-ACK Risk</div>
+          <div class="warn" style="background:rgba(192,132,252,0.08); border:1px dashed rgba(192,132,252,0.4); color:var(--purple);">⚠ JMS spec: calling acknowledge() on message N acknowledges ALL messages received in that session up to N. Risk if processing multiple concurrently.</div>
+          <div class="guard">Set maxMessagesPerTask=1. One message per session. ACKs exactly that one message.</div>
+          <div class="codeblock" style="border-left-color:var(--purple);">
+            factory.setMaxMessagesPerTask(1);<br>
+            <span style="color:var(--purple);">factory.setSessionAcknowledgeMode(Session.CLIENT_ACKNOWLEDGE);</span>
+          </div>
+        </div>
+        <div>
+          <div class="card-title" style="color:var(--orange); margin-bottom:8px;">MQ Session Timeout During Long Processing</div>
+          <div class="warn" style="background:rgba(251,146,60,0.08); border:1px dashed rgba(251,146,60,0.4); color:var(--orange);">⚠ If file processing exceeds IBM MQ HBINT (heartbeat) timeout, session is dropped → IBM MQ redelivers to another instance while first is still running.</div>
+          <div class="guard">Two instances race → atomic UPDATE WHERE SUBMITTED → one wins. UNIQUE(file_id, row_num) handles any partial row overlap.</div>
+          <div class="guard">Set IBM MQ HBINT > max expected processing time. Or chunk large files to keep processing fast.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel panel-amber">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(251,191,36,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--amber)">Large File Handling — Chunked Processing</div>
+        <div class="sec-head-line" style="background:rgba(251,191,36,0.25)"></div>
+      </div>
+      <div class="warn" style="background:rgba(251,191,36,0.07); border:1px dashed rgba(251,191,36,0.4); color:var(--amber);">⚠ 100,000 row file in single @Transactional → long-running tx → DB connection timeout, lock escalation, OOM loading all rows into memory at once.</div>
+      <div class="guard">Chunk rows into batches of 500. Each batch in its own @Transactional(REQUIRES_NEW). Track last_processed_row as checkpoint in trade_file. On redelivery → skip already-committed batches.</div>
+      <div class="codeblock" style="border-left-color:var(--amber);">
+        <span style="color:var(--amber);">ALTER TABLE trade_file ADD COLUMN last_processed_row INT DEFAULT 0;</span><br>
+        -- On each batch commit → UPDATE last_processed_row = batchEndRow<br>
+        -- On redelivery → resume from last_processed_row + 1<br>
+        <span style="color:var(--green);">-- UNIQUE(file_id, row_number) still protects against any overlap</span>
+      </div>
+    </div>
+  </div><!-- /tab2 -->
+
+  <!-- ════════════════════════════════════════
+       TAB 3 — STATE MACHINE
+  ════════════════════════════════════════ -->
+  <div class="tab-content" id="tab3">
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(56,189,248,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--accent)">trade_file Status State Machine</div>
+        <div class="sec-head-line" style="background:rgba(56,189,248,0.25)"></div>
+      </div>
+      <div class="state-wrap">
+
+        <!-- SUBMITTED -->
+        <div class="state-box" style="border-color:var(--green);">
+          <div class="state-box-title" style="color:var(--green);">SUBMITTED</div>
+          <div class="state-box-sub">Set on upload commit</div>
+        </div>
+
+        <!-- Down arrows from SUBMITTED -->
+        <div class="state-row" style="gap:100px; margin:4px 0;">
+          <div class="state-arrow-group">
+            <div class="arr-down" style="min-height:36px;"><div class="arr-down-line" style="background:var(--purple);"></div><div class="arr-down-head" style="color:var(--purple);">▼</div></div>
+            <div class="state-arrow-label" style="color:var(--purple);">Atomic UPDATE wins</div>
+          </div>
+          <div class="state-arrow-group">
+            <div class="arr-down" style="min-height:36px;"><div class="arr-down-line" style="background:var(--red);"></div><div class="arr-down-head" style="color:var(--red);">▼</div></div>
+            <div class="state-arrow-label" style="color:var(--red);">5 fetch retries fail</div>
+          </div>
+        </div>
+
+        <!-- IN_PROGRESS + DLQ -->
+        <div class="state-row" style="gap:20px; margin:4px 0;">
+          <div class="state-box" style="border-color:var(--amber); min-width:230px;">
+            <div class="state-box-title" style="color:var(--amber);">IN_PROGRESS</div>
+            <div class="state-box-sub">Listener processing file</div>
+            <div style="font-size:9px; color:var(--red); margin-top:6px;">tx rolls back → reverts to SUBMITTED ④</div>
+          </div>
+          <div style="width:60px;"></div>
+          <div class="state-box" style="border-color:var(--red); min-width:210px;">
+            <div class="state-box-title" style="color:var(--red);">trade_file_dlq</div>
+            <div class="state-box-sub">DB DLQ table · status=PENDING</div>
+            <div style="font-size:9px; color:var(--amber); margin-top:6px;">Manual ops reprocessing</div>
+          </div>
+        </div>
+
+        <!-- Down arrows from IN_PROGRESS -->
+        <div class="state-row" style="gap:120px; margin:4px 0; margin-left:-140px;">
+          <div class="state-arrow-group">
+            <div class="arr-down" style="min-height:36px;"><div class="arr-down-line" style="background:var(--green);"></div><div class="arr-down-head" style="color:var(--green);">▼</div></div>
+            <div class="state-arrow-label" style="color:var(--green);">All rows inserted + commit</div>
+          </div>
+          <div class="state-arrow-group">
+            <div class="arr-down" style="min-height:36px;"><div class="arr-down-line" style="background:var(--pink);"></div><div class="arr-down-head" style="color:var(--pink);">▼</div></div>
+            <div class="state-arrow-label" style="color:var(--pink);">IBM MQ backout threshold ⑤</div>
+          </div>
+        </div>
+
+        <!-- COMPLETED + FAILED -->
+        <div class="state-row" style="gap:20px; margin:4px 0;">
+          <div class="state-box" style="border-color:var(--green); min-width:200px;">
+            <div class="state-box-title" style="color:var(--green);">✅ COMPLETED</div>
+            <div class="state-box-sub">Terminal · all rows created</div>
+          </div>
+          <div style="width:60px;"></div>
+          <div class="state-box" style="border-color:var(--pink); min-width:200px;">
+            <div class="state-box-title" style="color:var(--pink);">❌ FAILED</div>
+            <div class="state-box-sub">Permanent failure · backout</div>
+          </div>
+        </div>
+
+      </div>
+      <div class="note" style="border-left-color:var(--amber); background:rgba(251,191,36,0.05); margin-top:20px;">
+        <strong style="color:var(--amber);">Why IN_PROGRESS cannot be orphaned:</strong>
+        markInProgress() uses default REQUIRES propagation → it joins the same @Transactional as the row inserts.
+        If processing fails, the entire transaction rolls back — including the IN_PROGRESS status update.
+        Status automatically reverts to SUBMITTED. IBM MQ redelivers. Clean retry with no manual intervention.
+      </div>
+    </div>
+  </div><!-- /tab3 -->
+
+  <!-- ════════════════════════════════════════
+       TAB 4 — FAILURE MATRIX
+  ════════════════════════════════════════ -->
+  <div class="tab-content" id="tab4">
+    <div class="panel">
+      <div class="sec-head">
+        <div class="sec-head-line" style="background:rgba(56,189,248,0.25)"></div>
+        <div class="sec-head-text" style="color:var(--accent)">Complete Failure Matrix — 18 Scenarios</div>
+        <div class="sec-head-line" style="background:rgba(56,189,248,0.25)"></div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="color:var(--accent);">#</th>
+              <th style="color:var(--accent);">Scenario</th>
+              <th style="color:var(--accent);">DB State</th>
+              <th style="color:var(--accent);">MQ State</th>
+              <th style="color:var(--accent);">Recovery</th>
+            </tr>
+          </thead>
+          <tbody id="matrix-body"></tbody>
+        </table>
+      </div>
+      <div class="note" style="border-left-color:var(--red); background:rgba(248,113,113,0.04); margin-top:16px;">
+        <strong style="color:var(--red);">Rows 14–16 are implementation bugs, not runtime failures.</strong>
+        They only occur if the code is written incorrectly. The circled numbers ②③④ in the Listener tab show exactly where each is prevented in the design.
+      </div>
+    </div>
+  </div><!-- /tab4 -->
+
+</div><!-- /page -->
+
+<script>
+  // ── Tab switching ──
+  function showTab(i) {
+    document.querySelectorAll('.tab-content').forEach((el, j) => {
+      el.classList.toggle('active', i === j);
+    });
+    document.querySelectorAll('.tab').forEach((el, j) => {
+      el.classList.toggle('active', i === j);
+    });
+  }
+
+  // ── Failure matrix data ──
+  const matrix = [
+    ["1","MQ send() throws RuntimeException inside @Transactional","Rolled back ✅","No message sent","Clean failure. @Transactional rolls back DB. Client retries upload.","var(--green)"],
+    ["2","DB commit fails after MQ send succeeds — Gap 1","Nothing committed","Message in MQ ❌","fetchWithRetry 5x → trade_file_dlq (REQUIRES_NEW) → ops review","var(--red)"],
+    ["3","Race: IBM MQ delivers before DB commits — Gap 2","Committing...","Delivered early","fetchWithRetry attempt #2 after 500ms catches committed row","var(--orange)"],
+    ["4","Client retries upload (timeout / network failure)","Duplicate row risk","Duplicate msg risk","correlationId UNIQUE constraint → idempotency check → return existing fileId","var(--teal)"],
+    ["5","Two app instances race on same message","SUBMITTED","Duplicate delivery","Atomic UPDATE WHERE SUBMITTED → DB lock → one winner, one skips","var(--purple)"],
+    ["6","App crash before jmsTemplate.send()","Rolled back","No message","Clean. No orphan state. Nothing to recover.","var(--green)"],
+    ["7","App crash after send(), before JPA commit","Rolled back","Message in MQ","Same as Gap 1 → fetch retries exhausted → DLQ table","var(--orange)"],
+    ["8","App crash mid-row insert (tx uncommitted)","Rolled back → SUBMITTED","Not ACKed → redelivered","Fresh retry. UNIQUE(file_id, row_num) skips already-inserted rows.","var(--green)"],
+    ["9","App crash after processFile commits, before ACK","COMPLETED persisted","Redelivered on reconnect","markInProgress=0 (COMPLETED) → skip processing → ACK succeeds","var(--green)"],
+    ["10","Corrupt file — parseCsv always throws","SUBMITTED (tx rolls back)","Redelivered N times","IBM MQ BackoutThreshold=5 → BACKOUT queue → BackoutListener → FAILED","var(--pink)"],
+    ["11","DB commits, jmsMessage.acknowledge() throws","COMPLETED","Redelivered","ACK retry 3x. If all fail: status=COMPLETED guard skips on redelivery.","var(--amber)"],
+    ["12","All 3 ACK retries fail","COMPLETED","Keeps redelivering","status=COMPLETED → markInProgress=0 → skip forever. Safe infinite loop.","var(--amber)"],
+    ["13","All 5 fetch retries exhausted (Gap 1 confirmed)","Missing","Delivered","REQUIRES_NEW saves to trade_file_dlq → ACK → removed from queue → ops","var(--red)"],
+    ["14","BUG: processFile() in same class as listener","No tx at all","Delivered","Spring AOP proxy bypassed. Fix: separate @Service ②","var(--red)"],
+    ["15","BUG: fetchWithRetry inside @Transactional","Committing...","Delivered","REPEATABLE_READ caches empty result every retry. Fix: call before tx ③","var(--red)"],
+    ["16","BUG: markInProgress uses REQUIRES_NEW","IN_PROGRESS committed independently","Crash mid-row","Status orphaned, file never retried. Fix: use default REQUIRES ④","var(--red)"],
+    ["17","Large file: 100k rows in single @Transactional","Lock escalation / timeout","Redelivered","Chunk 500 rows/batch + last_processed_row checkpoint for resume","var(--amber)"],
+    ["18","MQ session timeout during long processing","IN_PROGRESS (tx open)","Redelivered to other instance","Two instances race → atomic lock → one wins → UNIQUE handles rows","var(--orange)"],
+  ];
+
+  const tbody = document.getElementById('matrix-body');
+  matrix.forEach(([n, sc, db, mq, rec, col], i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:var(--muted);">${n}</td>
+      <td style="color:var(--text);">${sc}</td>
+      <td style="color:var(--muted);">${db}</td>
+      <td style="color:var(--muted);">${mq}</td>
+      <td style="color:${col}; font-weight:600;">${rec}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+</script>
+</body>
+</html>
